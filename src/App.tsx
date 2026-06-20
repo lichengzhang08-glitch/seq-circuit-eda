@@ -62,14 +62,12 @@ const parserSchema = {
 };
 
 const exampleRows: StateRow[] = [
-  { presentState: "00", input: "0", nextState: "00", output: "0" },
-  { presentState: "00", input: "1", nextState: "01", output: "0" },
-  { presentState: "01", input: "0", nextState: "01", output: "0" },
-  { presentState: "01", input: "1", nextState: "10", output: "0" },
-  { presentState: "10", input: "0", nextState: "10", output: "0" },
-  { presentState: "10", input: "1", nextState: "11", output: "0" },
-  { presentState: "11", input: "0", nextState: "11", output: "0" },
-  { presentState: "11", input: "1", nextState: "00", output: "1" },
+  { presentState: "A", input: "0", nextState: "A", output: "0" },
+  { presentState: "A", input: "1", nextState: "B", output: "0" },
+  { presentState: "B", input: "0", nextState: "C", output: "1" },
+  { presentState: "B", input: "1", nextState: "A", output: "0" },
+  { presentState: "C", input: "0", nextState: "A", output: "1" },
+  { presentState: "C", input: "1", nextState: "C", output: "1" },
 ];
 
 const detectorRows: StateRow[] = [
@@ -96,6 +94,9 @@ const blankRow: StateRow = {
   nextState: "",
   output: "",
 };
+
+const makeBlankRows = (count = 4) =>
+  Array.from({ length: count }, () => ({ ...blankRow }));
 
 async function parseStateTableWithOpenAI({
   apiKey,
@@ -196,8 +197,9 @@ function App() {
   const [openAiApiKey, setOpenAiApiKey] = useState("");
   const [openAiModel, setOpenAiModel] = useState("gpt-4o-mini");
   const [isParsingText, setIsParsingText] = useState(false);
-  const [stateRows, setStateRows] = useState<StateRow[]>(exampleRows);
+  const [stateRows, setStateRows] = useState<StateRow[]>(() => makeBlankRows(4));
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [hasGenerated, setHasGenerated] = useState(false);
   const [selectedSignal, setSelectedSignal] = useState("");
   const [generationStatus, setGenerationStatus] = useState("Ready");
   const [csvText, setCsvText] = useState("");
@@ -233,7 +235,23 @@ function App() {
     document.body.style.userSelect = "none";
   };
 
-  const outputAnalysis = analysis;
+  const resetGeneratedOutput = () => {
+    setAnalysis(null);
+    setHasGenerated(false);
+    setSelectedSignal("");
+  };
+
+  const changeModelType = (value: ModelType) => {
+    setModelType(value);
+    resetGeneratedOutput();
+  };
+
+  const changeFlipFlopType = (value: FlipFlopType) => {
+    setFlipFlopType(value);
+    resetGeneratedOutput();
+  };
+
+  const outputAnalysis = hasGenerated ? analysis : null;
 
   const assignmentBitCount = useMemo(() => {
     const binaryLengths = stateRows
@@ -271,6 +289,32 @@ function App() {
       ),
     );
     setAnalysis(null);
+    setHasGenerated(false);
+  };
+
+  const handleStateTableKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    const target = event.currentTarget;
+    const row = Number(target.dataset.row);
+    const col = Number(target.dataset.col);
+    const focusCell = (nextRow: number, nextCol: number) => {
+      const nextInput = document.querySelector<HTMLInputElement>(
+        `input[data-state-table-cell="true"][data-row="${nextRow}"][data-col="${nextCol}"]`,
+      );
+      nextInput?.focus();
+      return Boolean(nextInput);
+    };
+    if (event.key === "ArrowRight" && target.selectionEnd === target.value.length) {
+      if (focusCell(row, col + 1)) event.preventDefault();
+    }
+    if (event.key === "ArrowLeft" && target.selectionStart === 0) {
+      if (focusCell(row, col - 1)) event.preventDefault();
+    }
+    if (event.key === "ArrowUp") {
+      if (focusCell(row - 1, col)) event.preventDefault();
+    }
+    if (event.key === "ArrowDown") {
+      if (focusCell(row + 1, col)) event.preventDefault();
+    }
   };
 
   const updateStateAssignmentSymbol = (binary: string, value: string) => {
@@ -279,24 +323,37 @@ function App() {
       [binary]: value.toUpperCase(),
     }));
     setAnalysis(null);
+    setHasGenerated(false);
   };
 
   const addRow = () => {
     setStateRows((rows) => [...rows, blankRow]);
+    setHasGenerated(false);
   };
 
   const clearRows = () => {
-    setStateRows([blankRow]);
+    setStateRows(makeBlankRows(4));
     setAnalysis(null);
+    setHasGenerated(false);
     setGenerationStatus("Table cleared");
   };
 
   const loadExample = () => {
     setModelType("mealy");
     setFlipFlopType("jk");
+    setInputVariable("X");
+    setOutputVariable("Z");
+    setStateAssignmentSymbols({
+      "00": "A",
+      "01": "B",
+      "10": "C",
+      "11": "",
+    });
     setStateRows(exampleRows);
     setAnalysis(null);
-    setGenerationStatus("2-bit up-counter example loaded");
+    setHasGenerated(false);
+    setSelectedSignal("");
+    setGenerationStatus("Professor's Mealy JK example loaded");
   };
 
   const loadNamedExample = (name: string) => {
@@ -304,12 +361,14 @@ function App() {
       setModelType("mealy");
       setFlipFlopType("d");
       setStateRows(detectorRows);
+      setHasGenerated(false);
       setGenerationStatus("Sequence detector example loaded");
     }
     if (name === "toggle") {
       setModelType("mealy");
       setFlipFlopType("t");
       setStateRows(toggleRows);
+      setHasGenerated(false);
       setGenerationStatus("Toggle controller example loaded");
     }
     if (name === "basic") {
@@ -317,6 +376,7 @@ function App() {
       return;
     }
     setAnalysis(null);
+    setHasGenerated(false);
   };
 
   const parseDescription = async () => {
@@ -342,6 +402,7 @@ function App() {
       setInputVariable("X");
       setOutputVariable("Z");
       setAnalysis(null);
+      setHasGenerated(false);
       setSelectedSignal("");
       setGenerationStatus("OpenAI parsed the problem into a binary state table");
     } catch (err: any) {
@@ -370,6 +431,7 @@ function App() {
     );
     if (!validation.valid) {
       setAnalysis(null);
+      setHasGenerated(false);
       setSelectedSignal("");
       setGenerationStatus(validation.message);
       alert(validation.message);
@@ -382,6 +444,7 @@ function App() {
       outputVariable.trim().toUpperCase() || "Z",
     );
     setAnalysis(result);
+    setHasGenerated(result.valid);
     setSelectedSignal(result.equations[0]?.signal ?? "");
     setGenerationStatus(result.valid ? "Generated successfully" : "Validation failed");
   };
@@ -450,6 +513,7 @@ function App() {
     }
     setStateRows(rows);
     setAnalysis(null);
+    setHasGenerated(false);
     setGenerationStatus("CSV imported");
   };
 
@@ -497,14 +561,14 @@ function App() {
                   label="Mealy"
                   description="Z depends on state and X"
                   checked={modelType === "mealy"}
-                  onChange={() => setModelType("mealy")}
+                  onChange={() => changeModelType("mealy")}
                 />
                 <ChoiceCard
                   name="modelType"
                   label="Moore"
                   description="Z depends on state only"
                   checked={modelType === "moore"}
-                  onChange={() => setModelType("moore")}
+                  onChange={() => changeModelType("moore")}
                 />
               </div>
             </Panel>
@@ -516,21 +580,21 @@ function App() {
                   label="JK"
                   description="J/K inputs"
                   checked={flipFlopType === "jk"}
-                  onChange={() => setFlipFlopType("jk")}
+                  onChange={() => changeFlipFlopType("jk")}
                 />
                 <ChoiceCard
                   name="flipFlopType"
                   label="D-FF"
                   description="D inputs"
                   checked={flipFlopType === "d"}
-                  onChange={() => setFlipFlopType("d")}
+                  onChange={() => changeFlipFlopType("d")}
                 />
                 <ChoiceCard
                   name="flipFlopType"
                   label="T-FF"
                   description="T inputs"
                   checked={flipFlopType === "t"}
-                  onChange={() => setFlipFlopType("t")}
+                  onChange={() => changeFlipFlopType("t")}
                 />
               </div>
               <div className="mt-4 rounded-[4px] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
@@ -605,9 +669,10 @@ function App() {
                     </span>
                     <input
                       value={inputVariable}
-                      onChange={(event) =>
-                        setInputVariable(event.target.value.toUpperCase())
-                      }
+                      onChange={(event) => {
+                        setInputVariable(event.target.value.toUpperCase());
+                        resetGeneratedOutput();
+                      }}
                       className="h-10 w-full rounded-[3px] border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-950 outline-none transition focus:border-neutral-950"
                     />
                   </label>
@@ -617,9 +682,10 @@ function App() {
                     </span>
                     <input
                       value={outputVariable}
-                      onChange={(event) =>
-                        setOutputVariable(event.target.value.toUpperCase())
-                      }
+                      onChange={(event) => {
+                        setOutputVariable(event.target.value.toUpperCase());
+                        resetGeneratedOutput();
+                      }}
                       className="h-10 w-full rounded-[3px] border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-950 outline-none transition focus:border-neutral-950"
                     />
                   </label>
@@ -627,7 +693,7 @@ function App() {
                 <div className="mb-3 grid grid-cols-3 gap-2">
                   <SmallButton onClick={addRow}>Add Row</SmallButton>
                   <SmallButton onClick={clearRows}>Clear Table</SmallButton>
-                  <SmallButton onClick={loadExample}>Load Example</SmallButton>
+                  <SmallButton onClick={loadExample} variant="example">Load Example</SmallButton>
                 </div>
                 <select
                   defaultValue=""
@@ -659,22 +725,34 @@ function App() {
                         <tr key={index} className="border-t border-neutral-200">
                           <EditableCell
                             value={row.presentState}
+                            rowIndex={index}
+                            colIndex={0}
+                            onKeyDown={handleStateTableKeyDown}
                             onChange={(value) =>
                               updateRow(index, "presentState", value)
                             }
                           />
                           <EditableCell
                             value={row.input}
+                            rowIndex={index}
+                            colIndex={1}
+                            onKeyDown={handleStateTableKeyDown}
                             onChange={(value) => updateRow(index, "input", value)}
                           />
                           <EditableCell
                             value={row.nextState}
+                            rowIndex={index}
+                            colIndex={2}
+                            onKeyDown={handleStateTableKeyDown}
                             onChange={(value) =>
                               updateRow(index, "nextState", value)
                             }
                           />
                           <EditableCell
                             value={row.output}
+                            rowIndex={index}
+                            colIndex={3}
+                            onKeyDown={handleStateTableKeyDown}
                             onChange={(value) => updateRow(index, "output", value)}
                           />
                         </tr>
@@ -718,36 +796,51 @@ function App() {
           </div>
 
           <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto pl-4 pr-1">
-            <Panel title="ROW 1: EQUATIONS SUMMARY">
-              <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
-                <div className="grid gap-4">
-                  <ValidationBox analysis={outputAnalysis} />
-                  <EquationSummary analysis={outputAnalysis} />
+            {!hasGenerated ? (
+              <div className="grid min-h-[720px] flex-1 place-items-center rounded-[4px] border border-dashed border-neutral-300 bg-white px-8 text-center">
+                <div>
+                  <p className="text-lg font-semibold text-neutral-900">
+                    Waiting for input...
+                  </p>
+                  <p className="mt-2 max-w-md text-sm leading-6 text-neutral-500">
+                    Please configure your state table and click Generate to synthesize equations, K-maps, circuit diagram, and timing diagram.
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={copyEquations}
-                  disabled={!outputAnalysis}
-                  className="h-10 self-start rounded-[3px] border border-neutral-300 bg-white px-5 text-sm font-semibold text-neutral-800 transition hover:border-neutral-950 hover:bg-neutral-950 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Copy Equations
-                </button>
               </div>
-            </Panel>
+            ) : (
+              <>
+                <Panel title="ROW 1: EQUATIONS SUMMARY">
+                  <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
+                    <div className="grid gap-4">
+                      <ValidationBox analysis={outputAnalysis} />
+                      <EquationSummary analysis={outputAnalysis} />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={copyEquations}
+                      disabled={!outputAnalysis}
+                      className="h-10 self-start rounded-[3px] border border-neutral-300 bg-white px-5 text-sm font-semibold text-neutral-800 transition hover:border-neutral-950 hover:bg-neutral-950 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Copy Equations
+                    </button>
+                  </div>
+                </Panel>
 
-            <Panel title="ROW 2: K-MAP VISUALIZATIONS">
-              <div className="min-w-0 resize overflow-auto rounded-[4px] border border-neutral-200 bg-white p-3">
-                <KMap equation={selectedEquation} analysis={outputAnalysis} />
-              </div>
-            </Panel>
+                <Panel title="ROW 2: K-MAP VISUALIZATIONS">
+                  <div className="min-w-0 resize overflow-auto rounded-[4px] border border-neutral-200 bg-white p-3">
+                    <KMap equation={selectedEquation} analysis={outputAnalysis} />
+                  </div>
+                </Panel>
 
-            <div className="min-h-[640px]">
-              <Panel title="ROW 3: SEQUENTIAL CIRCUIT DIAGRAM" fill>
-                <CircuitDiagram analysis={outputAnalysis} flipFlopType={flipFlopType} />
-              </Panel>
-            </div>
+                <div className="min-h-[640px]">
+                  <Panel title="ROW 3: SEQUENTIAL CIRCUIT DIAGRAM" fill>
+                    <CircuitDiagram analysis={outputAnalysis} flipFlopType={flipFlopType} />
+                  </Panel>
+                </div>
 
-            <TimingDiagram stateRows={stateRows} triggerEdge={triggerEdge} />
+                <TimingDiagram stateRows={stateRows} triggerEdge={triggerEdge} />
+              </>
+            )}
           </section>
         </section>
 
@@ -1247,15 +1340,21 @@ function ChoiceCard({
 function SmallButton({
   children,
   onClick,
+  variant = "default",
 }: {
   children: React.ReactNode;
   onClick: () => void;
+  variant?: "default" | "example";
 }) {
+  const className =
+    variant === "example"
+      ? "rounded-[3px] border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100"
+      : "rounded-[3px] border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold text-neutral-700 transition hover:border-neutral-950 hover:bg-neutral-950 hover:text-white";
   return (
     <button
       type="button"
       onClick={onClick}
-      className="rounded-[3px] border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold text-neutral-700 transition hover:border-neutral-950 hover:bg-neutral-950 hover:text-white"
+      className={className}
     >
       {children}
     </button>
@@ -1346,16 +1445,26 @@ function TableHead({ children }: { children: React.ReactNode }) {
 
 function EditableCell({
   value,
+  rowIndex,
+  colIndex,
+  onKeyDown,
   onChange,
 }: {
   value: string;
+  rowIndex: number;
+  colIndex: number;
+  onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   onChange: (value: string) => void;
 }) {
   return (
     <td className="p-2">
       <input
         value={value}
+        data-state-table-cell="true"
+        data-row={rowIndex}
+        data-col={colIndex}
         onChange={(event) => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
         className="h-9 w-full rounded-[2px] border border-neutral-300 bg-white px-2 text-sm text-neutral-950 outline-none transition focus:border-neutral-950"
       />
     </td>
