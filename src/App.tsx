@@ -201,6 +201,7 @@ function App() {
   const [selectedSignal, setSelectedSignal] = useState("");
   const [generationStatus, setGenerationStatus] = useState("Ready");
   const [csvText, setCsvText] = useState("");
+  const [stateAssignmentSymbols, setStateAssignmentSymbols] = useState<Record<string, string>>({});
   const [leftPaneWidth, setLeftPaneWidth] = useState(30);
   const resizingPaneRef = useRef(false);
 
@@ -232,18 +233,23 @@ function App() {
     document.body.style.userSelect = "none";
   };
 
-  const liveAnalysis = useMemo(
-    () =>
-      analyzeCircuit(
-        stateRows,
-        flipFlopType,
-        inputVariable.trim().toUpperCase() || "X",
-        outputVariable.trim().toUpperCase() || "Z",
-      ),
-    [stateRows, flipFlopType, inputVariable, outputVariable],
-  );
+  const outputAnalysis = analysis;
 
-  const outputAnalysis = liveAnalysis;
+  const assignmentBitCount = useMemo(() => {
+    const binaryLengths = stateRows
+      .flatMap((row) => [row.presentState.trim(), row.nextState.trim()])
+      .filter((value) => /^[01]+$/.test(value))
+      .map((value) => value.length);
+    return Math.max(1, analysis?.bitCount ?? binaryLengths[0] ?? 2);
+  }, [analysis, stateRows]);
+
+  const assignmentStates = useMemo(
+    () =>
+      Array.from({ length: 2 ** assignmentBitCount }, (_, index) =>
+        index.toString(2).padStart(assignmentBitCount, "0"),
+      ),
+    [assignmentBitCount],
+  );
 
   const selectedEquation = useMemo(() => {
     if (!outputAnalysis) return null;
@@ -264,6 +270,15 @@ function App() {
         rowIndex === index ? { ...row, [field]: value.toUpperCase() } : row,
       ),
     );
+    setAnalysis(null);
+  };
+
+  const updateStateAssignmentSymbol = (binary: string, value: string) => {
+    setStateAssignmentSymbols((symbols) => ({
+      ...symbols,
+      [binary]: value.toUpperCase(),
+    }));
+    setAnalysis(null);
   };
 
   const addRow = () => {
@@ -344,8 +359,24 @@ function App() {
   };
 
   const handleGenerate = () => {
-    const result = analyzeCircuit(
+    const translatedRows = translateStateRowsWithAssignments(
       stateRows,
+      stateAssignmentSymbols,
+    );
+    const validation = validateStateTableInput(
+      translatedRows,
+      inputVariable.trim().toUpperCase() || "X",
+      outputVariable.trim().toUpperCase() || "Z",
+    );
+    if (!validation.valid) {
+      setAnalysis(null);
+      setSelectedSignal("");
+      setGenerationStatus(validation.message);
+      alert(validation.message);
+      return;
+    }
+    const result = analyzeCircuit(
+      translatedRows,
       flipFlopType,
       inputVariable.trim().toUpperCase() || "X",
       outputVariable.trim().toUpperCase() || "Z",
@@ -562,6 +593,11 @@ function App() {
               </Panel>
 
               <Panel title="5. State Table Input">
+                <StateAssignmentEditor
+                  states={assignmentStates}
+                  symbols={stateAssignmentSymbols}
+                  onChange={updateStateAssignmentSymbol}
+                />
                 <div className="mb-4 grid grid-cols-2 gap-3">
                   <label className="block">
                     <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600">
@@ -845,6 +881,101 @@ function analyzeCircuit(
     equations,
     outputEquation,
     variableNames,
+  };
+}
+
+function translateStateRowsWithAssignments(
+  rows: StateRow[],
+  symbols: Record<string, string>,
+) {
+  const symbolToBinary = Object.fromEntries(
+    Object.entries(symbols)
+      .map(([binary, symbol]) => [symbol.trim().toUpperCase(), binary] as const)
+      .filter(([symbol]) => symbol.length > 0),
+  );
+  const translate = (value: string) => {
+    const cleanValue = value.trim().toUpperCase();
+    return symbolToBinary[cleanValue] ?? cleanValue;
+  };
+  return rows.map((row) => ({
+    ...row,
+    presentState: translate(row.presentState),
+    nextState: translate(row.nextState),
+  }));
+}
+
+function validateStateTableInput(
+  rows: StateRow[],
+  inputVariable: string,
+  outputVariable: string,
+) {
+  const binaryPattern = /^[01]+$/;
+  const variableCount = (value: string) => Math.max(1, value.replace(/[,\s]+/g, "").length);
+  const inputBitCount = variableCount(inputVariable);
+  const outputBitCount = variableCount(outputVariable);
+  const cleanRows = rows
+    .map((row) => ({
+      presentState: row.presentState.trim(),
+      input: row.input.trim(),
+      nextState: row.nextState.trim(),
+      output: row.output.trim(),
+    }))
+    .filter((row) => row.presentState || row.input || row.nextState || row.output);
+  if (!cleanRows.length) {
+    return {
+      valid: false,
+      message: "Error: State table is empty. Please enter binary rows before generating.",
+    };
+  }
+  for (const [index, row] of cleanRows.entries()) {
+    const cells = [
+      ["Present State", row.presentState],
+      [inputVariable, row.input],
+      ["Next State", row.nextState],
+      [outputVariable, row.output],
+    ];
+    for (const [label, value] of cells) {
+      if (!binaryPattern.test(value)) {
+        return {
+          valid: false,
+          message: `Error: Invalid table entry at row ${index + 1}, ${label}. Use only binary digits 0 and 1.`,
+        };
+      }
+    }
+  }
+  const stateLengths = new Set(
+    cleanRows.flatMap((row) => [row.presentState.length, row.nextState.length]),
+  );
+  if (stateLengths.size !== 1) {
+    return {
+      valid: false,
+      message: "Error: Invalid table entry. Present State and Next State must all use the same state bit-length.",
+    };
+  }
+  const stateBitCount = [...stateLengths][0] ?? 1;
+  for (const [index, row] of cleanRows.entries()) {
+    if (row.presentState.length !== stateBitCount || row.nextState.length !== stateBitCount) {
+      return {
+        valid: false,
+        message: `Error: Invalid state length at row ${index + 1}. Each state must contain exactly ${stateBitCount} bits.`,
+      };
+    }
+    if (row.input.length !== inputBitCount) {
+      return {
+        valid: false,
+        message: `Error: Invalid input length at row ${index + 1}. ${inputVariable} requires exactly ${inputBitCount} bit(s).`,
+      };
+    }
+    if (row.output.length !== outputBitCount) {
+      return {
+        valid: false,
+        message: `Error: Invalid output length at row ${index + 1}. ${outputVariable} requires exactly ${outputBitCount} bit(s).`,
+      };
+    }
+  }
+  return {
+    valid: true,
+    message: "Validation passed",
   };
 }
 
@@ -1166,6 +1297,44 @@ function EdgeTriggerControl({
       </div>
       <div className="rounded-[4px] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-medium text-neutral-700">
         Timing diagram trigger: {value === "rising" ? "Rising Edge" : "Falling Edge"}
+      </div>
+    </div>
+  );
+}
+
+function StateAssignmentEditor({
+  states,
+  symbols,
+  onChange,
+}: {
+  states: string[];
+  symbols: Record<string, string>;
+  onChange: (binary: string, value: string) => void;
+}) {
+  return (
+    <div className="mb-4 rounded-[4px] border border-neutral-200 bg-neutral-50 p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-600">
+          State Assignment
+        </h3>
+        <span className="text-xs font-medium text-neutral-500">
+          Symbol to binary mapping
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        {states.map((binary) => (
+          <label key={binary} className="grid gap-1">
+            <span className="font-mono text-xs font-bold text-neutral-700">
+              {binary}
+            </span>
+            <input
+              value={symbols[binary] ?? ""}
+              onChange={(event) => onChange(binary, event.target.value)}
+              placeholder="A"
+              className="h-9 rounded-[3px] border border-neutral-300 bg-white px-2 text-sm font-semibold uppercase text-neutral-950 outline-none transition focus:border-neutral-950"
+            />
+          </label>
+        ))}
       </div>
     </div>
   );
