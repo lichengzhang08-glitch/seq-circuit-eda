@@ -451,33 +451,10 @@ function App() {
 
   const exportReport = () => {
     if (!outputAnalysis) return;
-    const report = [
-      "Sequential Circuit Design Automation System",
-      "Student ID: 1140518",
-      "Name: Chang Li Cheng",
-      `Model Type: ${modelType}`,
-      `Flip-Flop Type: ${flipFlopType.toUpperCase()}`,
-      `Input Variable: ${inputVariable}`,
-      `Output Variable: ${outputVariable}`,
-      "",
-      "State Assignments",
-      ...Object.entries(outputAnalysis.stateAssignments).map(
-        ([state, bits]) => `${state} = ${bits}`,
-      ),
-      "",
-      "Equations",
-      ...outputAnalysis.equations.map(
-        (equation) => `${equation.signal} = ${equation.equation}`,
-      ),
-      `${outputAnalysis.outputEquation.signal} = ${outputAnalysis.outputEquation.equation}`,
-    ].join("\n");
-    const blob = new Blob([report], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "seqcircuit-report.txt";
-    link.click();
-    URL.revokeObjectURL(url);
+    const originalTitle = document.title;
+    document.title = "Sequential_Circuit_Design_Report";
+    window.print();
+    document.title = originalTitle;
   };
 
   const exportCsv = () => {
@@ -532,7 +509,7 @@ function App() {
   return (
     <main className="min-h-screen bg-[#f5f5f5] text-neutral-950">
       <div className="flex min-h-screen flex-col">
-        <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white/80 px-5 py-3 backdrop-blur-xl">
+        <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white/80 px-5 py-3 backdrop-blur-xl print:hidden">
           <div className="mx-auto flex max-w-[1920px] items-center justify-between gap-5">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-neutral-500">
@@ -549,9 +526,9 @@ function App() {
           </div>
         </header>
 
-        <section className="mx-auto flex w-full max-w-[1920px] flex-1 gap-0 p-4 xl:h-[calc(100vh-148px)]">
+        <section className="mx-auto flex w-full max-w-[1920px] flex-1 gap-0 p-4 print:m-0 print:block print:max-w-none print:p-0 xl:h-[calc(100vh-148px)]">
           <aside
-            className="flex min-h-0 min-w-[320px] flex-col gap-4 overflow-y-auto pr-4"
+            className="flex min-h-0 min-w-[320px] flex-col gap-4 overflow-y-auto pr-4 print:hidden"
             style={{ width: `${leftPaneWidth}%` }}
           >
             <Panel title="1. Model Type">
@@ -790,12 +767,12 @@ function App() {
             role="separator"
             aria-orientation="vertical"
             onPointerDown={startPaneResize}
-            className="group flex w-4 shrink-0 cursor-col-resize items-stretch justify-center"
+            className="group flex w-4 shrink-0 cursor-col-resize items-stretch justify-center print:hidden"
           >
             <div className="h-full w-px bg-neutral-200 transition group-hover:bg-neutral-950" />
           </div>
 
-          <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto pl-4 pr-1">
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto pl-4 pr-1 print:absolute print:left-0 print:top-0 print:m-0 print:w-full print:overflow-visible print:p-0">
             {!hasGenerated ? (
               <div className="grid min-h-[720px] flex-1 place-items-center rounded-[4px] border border-dashed border-neutral-300 bg-white px-8 text-center">
                 <div>
@@ -844,28 +821,15 @@ function App() {
           </section>
         </section>
 
-        <footer className="border-t border-neutral-200 bg-white/80 px-5 py-4 backdrop-blur-xl">
-          <div className="mx-auto flex max-w-[1920px] items-center justify-between gap-3">
-            <button
-              type="button"
-              className="rounded-[3px] border border-neutral-300 bg-white px-4 py-3 text-sm font-semibold text-neutral-700 transition hover:border-neutral-950 hover:bg-neutral-950 hover:text-white"
-            >
-              Settings
-            </button>
-            <button
-              type="button"
-              onClick={handleGenerate}
-              className="rounded-[3px] border border-neutral-950 bg-neutral-950 px-12 py-4 text-sm font-semibold tracking-wide text-white transition hover:bg-neutral-800 focus:outline-none"
-            >
-              GENERATE
-            </button>
+        <footer className="border-t border-neutral-200 bg-white/80 px-5 py-4 backdrop-blur-xl print:hidden">
+          <div className="mx-auto flex max-w-[1920px] items-center justify-center">
             <button
               type="button"
               onClick={exportReport}
               disabled={!outputAnalysis}
-              className="rounded-[3px] border border-neutral-300 bg-white px-4 py-3 text-sm font-semibold text-neutral-700 transition hover:border-neutral-950 hover:bg-neutral-950 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-[4px] bg-gradient-to-r from-indigo-500 to-purple-600 px-10 py-3 text-sm font-semibold tracking-wide text-white shadow-md transition-all hover:from-indigo-600 hover:to-purple-700 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Export Report
+              EXPORT PDF
             </button>
           </div>
         </footer>
@@ -1287,7 +1251,7 @@ function Panel({
 }) {
   return (
     <section
-      className={`rounded-[4px] border border-neutral-200 bg-white/90 p-4 shadow-none backdrop-blur ${
+      className={`rounded-[4px] border border-neutral-200 bg-white/90 p-4 shadow-none backdrop-blur print:break-inside-avoid print:border-neutral-300 print:bg-white print:shadow-none ${
         fill ? "flex h-full min-h-0 flex-1 flex-col" : ""
       }`}
     >
@@ -4230,7 +4194,7 @@ function TimingDiagram({
   const triggerLines = Array.from({ length: cycles }, (_, index) => edgeX(index));
 
   return (
-    <section className="flex min-h-0 flex-col rounded-[4px] border border-neutral-200 bg-white p-4">
+    <section className="flex min-h-0 flex-col rounded-[4px] border border-neutral-200 bg-white p-4 print:break-inside-avoid print:border-neutral-300 print:bg-white">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-600">
           Timing Diagram Viewer
@@ -4239,8 +4203,8 @@ function TimingDiagram({
           {triggerEdge === "rising" ? "Rising Edge 上緣" : "Falling Edge 下緣"}
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden rounded-[4px] border border-neutral-200 bg-neutral-50">
-        <svg viewBox={`0 0 ${width} 340`} className="h-full min-h-[320px] min-w-[800px]">
+      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden rounded-[4px] border border-neutral-200 bg-neutral-50 print:overflow-visible print:bg-white">
+        <svg viewBox={`0 0 ${width} 340`} className="h-full min-h-[320px] min-w-[800px] print:h-auto print:w-full print:min-w-0">
           <rect x="0" y="0" width={width} height="340" fill="#f8fafc" />
           {triggerLines.map((x) => (
             <line key={x} x1={x} y1="24" x2={x} y2="316" stroke="#94a3b8" strokeWidth="1.4" strokeDasharray="4 5" />
